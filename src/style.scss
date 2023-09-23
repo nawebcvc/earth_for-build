@@ -16,14 +16,27 @@ body {
     display: flex;
     flex-direction: column;
     row-gap: 5px;
+
+    .time {
+        position: fixed;
+        bottom: 0;
+        right: 0;
+        font-family: sans-serif;
+        font-size: 35px;
+        line-height: 35px;
+        color: #bcbbbb;
+        user-select: none;
+    }
 }
 
 .cords {
+    width: fit-content;
     font-family: sans-serif;
     font-size: 35px;
-    line-height: 45px;
-    color: #fff;
+    margin-top: 10px;
+    color: #bcbbbb;
     text-align: center;
+    margin: 0 auto;
 }
 
 .rng {
@@ -42,7 +55,10 @@ body {
 }
 
 .changePos {
-    width: 120px;
+    // width: 120px;
+    width: fit-content;
     margin: 0 auto;
     padding: 5px 10px;
+    color: #bcbbbb;
+    background: #000;
 }

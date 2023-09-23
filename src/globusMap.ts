@@ -12,14 +12,21 @@ import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js"
 // import BufferGeometryUtils from three lib for optimization, for merging all 14596 planeGeometries (dots on the sphere) into one BufferGeometry(14596 geos -> 1 geo)
 import { dotsSphere } from "./SpherePoints.js";
 // i have X and Y coordinates for planeGeometries (dots), i collect cords from the function that i took from the video
-// console.log(dotsSphere.length); // 29192
+// console.log(dotsSphere.length); // 29192 dots OMG...
+
 import { InteractionManager } from "three.interactive";
 // to add event listener to mesh objects, i love this library (*-*)
-// import * as meshLine from 'three.meshline/src/THREE.MeshLine.js';
-// meshlines library: https://www.npmjs.com/package/three.meshline
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+
+/* import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
-import { Line2 } from "three/examples/jsm/lines/Line2.js";
+import { Line2 } from "three/examples/jsm/lines/Line2.js"; */
+// official libraries of three js that can draw mesh lines but doesn`t support dashArray attribute and consists mistakes and errors in typescript
+
+// import * as meshLine from 'three.meshline/src/THREE.MeshLine.js';
+// meshlines library: https://www.npmjs.com/package/three.meshline that very old :(
+
+import { MeshLine, MeshLineGeometry, MeshLineMaterial } from '@lume/three-meshline';
+// newest version of THREE.MeshLine by @lume: https://github.com/lume/three-meshline (thank you @lume for supporting this library)
 
 // how to get cords of planeGeometries (dots) for sphere from any image:
 // you need two things: the image (that we will use for filling with dots) and the function that can do this magic
@@ -29,7 +36,7 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 // so you can take the cords just put something to collect (maybe array) it in:
 /* for (let y = 0; y < obj.w; y++) {// по оси Y
             for (let x = 0; x < obj.w; x++) {// по оси X
-                const a = obj.data[((obj.w * y) + x) * 4 + 3];// берём только n-нные значения
+                const a = obj.data[((obj.w * y) + x) * 4 + 3];// берём только n-ные значения
                 if (a > 200) {
                     obj.ar.push([x - obj.w, y - obj.w / 6.2])// здесь 6.2 — это как бы «отступ от севера»
                     // ... you can collect the cords from here, for example:
@@ -49,7 +56,7 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 // };
 // hmm, how to set settings in three js with vite :D
 
-const canvas = document.querySelector(".globus") as HTMLCanvasElement; // to show the webgl result in html DOM
+const canvas = document.querySelector(".globes") as HTMLCanvasElement; // to show the webgl result in html DOM
 const renderer = new THREE.WebGLRenderer({ canvas }); // renderer to render into canvas
 renderer.setSize(window.innerWidth, window.innerHeight); // we are setting size of renderer with window width and height
 renderer.setPixelRatio(2); // pixel ratio of the renderer
@@ -116,15 +123,51 @@ scene.add(parent);
 scene.add(meshHide);
 scene.add(lightGroup);
 
+enum EmathOp {
+  add = "add",
+  min = "min",
+  sub = "sub",
+  div = "div",
+};
+function mathArray(ar: number[], ar2: number[], op: EmathOp, fl?: number): number[] {
+  // arr: first array, arr2: second array, op: math operation, rnd: to floor the each primitive 
+  const r: number[] = [];
+  let flN = 1;
+  if (fl) {
+    for (let i = 0; i < fl; i++) {
+      flN *= 10
+    }
+  }
+  ar.forEach((l, i) => {
+    switch (op) {
+      case "add":
+        r.push(fl ? Math.floor((l + ar2[i]) * flN) / flN : l + ar2[i]);
+        break;
+      case "min":
+        r.push(fl ? Math.floor((l - ar2[i]) * flN) / flN : l - ar2[i]);
+        break;
+      case "sub":
+        r.push(fl ? Math.floor((l * ar2[i]) * flN) / flN : l * ar2[i]);
+        break;
+      case "div":
+        r.push(fl ? Math.floor((l / ar2[i]) * flN) / flN : l / ar2[i]);
+        break;
+    }
+  });
+  return r;
+};
+
 // types that can be used for creation mesh cylinder-base and cylinder-body objects
 type CylinderBody = THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
 type CylinderBase = THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+type nmbrX3 = [number, number, number];
+type nmbrX4 = [number, number, number, number];
 interface DataPoint {
-  main: boolean;
-  position1: [number, number, number];
-  position2: [number, number, number];
-  geometry1: [number, number, number, number];
-  geometry2: [number, number, number, number];
+  main?: boolean;
+  position1: nmbrX3;
+  position2: nmbrX3;
+  geometry1?: nmbrX4;
+  geometry2?: nmbrX4;
   event1?: (event: any, mesh: CylinderBody) => void;
   event2?: (event: any, mesh: CylinderBase) => void;
 }
@@ -136,7 +179,7 @@ function crtPoint(data: DataPoint) {
   const color = main ? 0x86c3f9 : 0x008dfb;
 
   const cylinderBody = new THREE.Mesh(
-    new THREE.CylinderGeometry(...geometry1),
+    new THREE.CylinderGeometry(...geometry1 || main ? [0.004, 0.004, 0.3, 12] : [0.004, 0.004, 0.2, 12]),
     new THREE.MeshBasicMaterial({ color: color })
   );
   cylinderBody.position.set(...position1);
@@ -152,7 +195,7 @@ function crtPoint(data: DataPoint) {
   }
 
   const cylinderBase = new THREE.Mesh(
-    new THREE.CircleGeometry(...geometry2),
+    new THREE.CircleGeometry(...geometry2 || main ? [0.02, 24, 0, 10] : [0.015, 24, 0, 10]),
     new THREE.MeshBasicMaterial({
       color: color,
       side: THREE.DoubleSide,
@@ -189,7 +232,7 @@ const cngMshpos = function (mesh: THREE.Mesh | THREE.Line) {
   console.log(...mesh.position);
   inpRngs.forEach((rng) => {
     const cls = rng.classList[0];
-    const p = mesh.position[cls];
+    const p = mesh.position[cls] as number;
     rng.value = String((p + 1) * 50);
     rng.addEventListener("input", (e: Event) => {
       (mesh.position as any)[rng.classList[0]] =
@@ -201,36 +244,29 @@ const cngMshpos = function (mesh: THREE.Mesh | THREE.Line) {
   });
 }; // Ahhh, do not check this function, typescript, pls...
 
-const dataPoint: DataPoint = {
-  main: true, // color
-  // position1: [0.66, 0.95, -0.28], // position of cylinderBody
-  position1: [-0.9184, 0.5878, -0.29], // position of cylinderBody
-  // position2: [0.662, 0.8, -0.28], // position of cylinderBase
-  position2: [-0.9204, 0.4447, -0.29], // position of cylinderBase
-  geometry1: [0.004, 0.004, 0.3, 12], // geometry of cylinderBody
-  geometry2: [0.02, 24, 0, 10], // geometry of cylinderBase
-  event1: (event, mesh: CylinderBody) => {
-    cngMshpos(mesh);
-    console.log("body");
-  },
-  event2: (event, mesh: CylinderBase) => {
-    cngMshpos(mesh);
-    console.log("base");
-  },
-};
-const mapPoint = crtPoint(dataPoint);
+const cngMshrot = function (mesh: THREE.Mesh | THREE.Line) {
+  cordsInfo.innerText = `X: ${mesh.rotation.x}, Y: ${mesh.rotation.y}, Z: ${mesh.rotation.z}`;
+  console.log(...mesh.rotation);
+  inpRngs.forEach((rng) => {
+    const cls = rng.classList[0];
+    const p = mesh.rotation[cls] as number;
+    rng.value = String((p + 1) * 50);
+    rng.addEventListener("input", (e: Event) => {
+      (mesh.rotation as any)[rng.classList[0]] =
+        +(e.target as HTMLInputElement).value * 0.02 - 1;
+      cordsInfo.innerText = `X: ${Math.floor(mesh.rotation.x * 10000) / 10000
+        }, Y: ${Math.floor(mesh.rotation.y * 10000) / 10000}, Z: ${Math.floor(mesh.rotation.z * 10000) / 10000
+        }`;
+    });
+  });
+}; // TODO: function that can rotate the mesh, it`s not done yet! it consist of some mistakes
 
-const tl = gsap.timeline({ defaults: { duration: 2 } }); // duration 2
-/* tl.fromTo(
-  mapPoint.base.scale,
-  { x: 0, y: 0, z: 0 },
-  { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0.4 }
-);
-tl.fromTo(
-  mapPoint.body.scale,
-  { x: 0, y: 0, z: 0 },
-  { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0.4 }
-); */
+const mainTl = gsap.timeline({ defaults: { duration: 2 } }); // duration 2
+const mainPos: nmbrX3 = [-0.9012, 0.4558, -0.3452]; // Uzbekistan (main position)
+// console.log(...mainPos);
+// console.log(...mathArray(mainPos, [0.0020, 0.1553, 0], EmathOp.add));
+// -0.9032 0.3005 -0.3452
+
 const fontLoad = new FontLoader();
 
 function crtText(data: DataText) {
@@ -275,8 +311,8 @@ function crtText(data: DataText) {
 
 interface DataText {
   text: string;
-  pos: [number, number, number];
-  rot: [number, number, number];
+  pos: nmbrX3;
+  rot: nmbrX3;
   size: number;
   parent?: Parent;
   color?: string | number;
@@ -287,41 +323,6 @@ interface DataText {
 }
 
 type TextMesh = THREE.Mesh<TextGeometry, THREE.MeshBasicMaterial>;
-
-const dataText: DataText = {
-  text: "One",
-  pos: [-0.9266, 0.6378, -0.2552],
-  rot: [0, -1.85, 0],
-  size: 0.05,
-  parent,
-  event: (event, mesh: TextMesh) => {
-    cngMshpos(mesh);
-    console.log("text");
-  },
-};
-const dataText2: DataText = {
-  text: "Test",
-  pos: [-0.9266, 0.5278, -0.2552],
-  rot: [0, -1.85, 0],
-  size: 0.05,
-  color: 0x84b3df,
-  parent,
-};
-
-const text1 = (await crtText(dataText)) as TextMesh;
-const text2 = (await crtText(dataText2)) as TextMesh;
-// console.log(text1, text2);
-
-/* tl.fromTo(
-  text1.scale,
-  { x: 0, y: 0, z: 0 },
-  { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0.1, duration: 1 }
-);
-tl.fromTo(
-  text2.scale,
-  { x: 0, y: 0, z: 0 },
-  { x: 1, y: 1, z: 1, ease: "power1.out", duration: 1 }
-); */
 
 const txrLoad = new THREE.TextureLoader();
 
@@ -354,8 +355,8 @@ type ImgMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 interface DataImg {
   imgSrc: string;
   size: [number, number];
-  pos: [number, number, number];
-  rot: [number, number, number];
+  pos: nmbrX3;
+  rot: nmbrX3;
   parent?: Parent;
   alpha?: number;
   event?: (event: Event, mesh: TextMesh) => void;
@@ -372,13 +373,6 @@ const dataImg: DataImg = {
     console.log("img");
   },
 };
-
-const imgMesh = crtImg(dataImg);
-/* tl.fromTo(
-  imgMesh.scale,
-  { x: 0, y: 0, z: 0 },
-  { x: 0.7, y: 0.7, z: 1, ease: "power1.out", duration: 1 }
-); */
 
 const imgLoad: THREE.ImageLoader = new THREE.ImageLoader();
 
@@ -690,41 +684,6 @@ function drawXYcords(xy: string | number[]) {
 const dotsMeshGroup = drawXYcords(dotsSphere);
 // console.log(dotsMeshGroup);
 
-
-enum EmathOp {
-  add = "add",
-  min = "min",
-  sub = "sub",
-  div = "div",
-};
-function mathArray(ar: number[], ar2: number[], op: EmathOp, fl?: number): number[] {
-  // arr: first array, arr2: second array, op: math operation, rnd: to floor the each primitive 
-  const r: number[] = [];
-  let flN = 1;
-  if (fl) {
-    for (let i = 0; i < fl; i++) {
-      flN *= 10
-    }
-  }
-  ar.forEach((l, i) => {
-    switch (op) {
-      case "add":
-        r.push(fl ? Math.floor((l + ar2[i]) * flN) / flN : l + ar2[i]);
-        break;
-      case "min":
-        r.push(fl ? Math.floor((l - ar2[i]) * flN) / flN : l - ar2[i]);
-        break;
-      case "sub":
-        r.push(fl ? Math.floor((l * ar2[i]) * flN) / flN : l * ar2[i]);
-        break;
-      case "div":
-        r.push(fl ? Math.floor((l / ar2[i]) * flN) / flN : l / ar2[i]);
-        break;
-    }
-  });
-  return r;
-};
-
 const vecToArrPos = (c: THREE.Vector3[]) => {
   const r = []; // result
   for (let i = 0; i < c.length - 1; i++) {
@@ -733,10 +692,10 @@ const vecToArrPos = (c: THREE.Vector3[]) => {
     r.push(s.x, s.y, s.z);
     r.push(e.x, e.y, e.z);
   }
-  return r as [number, number, number];
+  return r as nmbrX3;
 }
 
-const arrToVec = (a: [number, number, number]) => {
+const arrToVec = (a: nmbrX3) => {
   return new THREE.Vector3(a[0], a[1], a[2])
 }
 
@@ -745,18 +704,21 @@ type LineMesh = THREE.Line<
   THREE.LineBasicMaterial
 >;
 interface DataLine {
-  from: [number, number, number];
-  to: [number, number, number];
-  middle: [number, number, number];
+  from?: nmbrX3;
+  to?: nmbrX3;
+  middle?: nmbrX3;
   color?: number;
   width?: number;
-  dashSize?: number;
+  dashOffset?: number;
+  dashArray?: number;
+  dashRatio?: number;
+  length?: number;
   animation?: boolean;
   event?: (event: Event, mesh: LineMesh) => void;
 }
 
 function crtLines(data: DataLine) {
-  const { from, to, middle, color, width, animation, dashSize, event } = data;
+  const { from, to, middle, color, width, animation, length, dashArray, dashOffset, dashRatio, event } = data;
 
   function crtCurve(cords: { [n: string]: number[] }) {
     const { f, t, m } = cords;
@@ -779,24 +741,37 @@ function crtLines(data: DataLine) {
   //   lineWidth = .003
   // }
 
-  const allCords = crtCurve({ f: from, t: to, m: middle });
+
+  const f = from || mainPos || [0, -1.5, 0];
+  const t = to || [0, 1.5, 0];
+
+  const midPoint = new THREE.Vector3();
+  midPoint.addVectors(arrToVec(f), arrToVec(t)).multiplyScalar(0.7);
+
+  const m = middle || midPoint /* ?? new THREE.Vector3(t[0] + 0.5, t[1] + 0.5, t[2]) */ // ?? mathArray(from || [...parent.position], to, EmathOp.add, 3)
+
+  const allCords = crtCurve({ f, t, m });
   const cords = [...allCords];
 
-  if (dashSize) {
-    const dShz = dashSize > 20 ? 10 : dashSize < 0.8 ? 0.8 : dashSize;
+  if (length) {
+    const dShz = length > 20 ? 10 : length < 0.8 ? 0.8 : length;
     cords.length = Math.floor(dShz * 2.5); // 144
   }
 
-  const lineMesh = width
-    ? new Line2( // line geometry (fat lines)
-      new LineGeometry().setPositions(vecToArrPos(cords) as number[]),
-      new LineMaterial({
-        color: color || 0xffffff,
-        linewidth: width || 0.003,
-        dashed: true,
-      })
-    )
-    : new THREE.Line( // if you want to create a gl.line that can not be resized (width)
+  let lineMesh: THREE.Mesh<any, any> | THREE.Line<any, any>;
+  if (width) { // line geometry by @lume, three.meshline, another non-official library that can draw mesh lines (it`s newer than the library in the video) (https://github.com/lume/three-meshline))
+    const geo = new MeshLineGeometry();
+    geo.setPoints(vecToArrPos(cords) as number[]);
+    lineMesh = new MeshLine(geo, new MeshLineMaterial({
+      transparent: true, // Необходимо, чтобы была видна анимация, если false, то линия просто будет залита определённым цветом и не будет видна анимация
+      lineWidth: width || 1,
+      color: new THREE.Color(color || 0xffffff),
+      dashArray: dashArray || 2, // всегда должен быть
+      dashOffset: dashOffset || 0, // начать с dash к zero
+      dashRatio: dashRatio || 0.5, // видимая минута ряда длины. Мин: 0.5, Макс: 0.99
+    } as ShaderMaterialParameters & MeshLineMaterial));// Создаём саму линию (Mesh)
+  } else {
+    lineMesh = new THREE.Line( // if you want to create a gl.line that can not be resized (width) or animated with dashOffset, dashRatio and dashArray
       new THREE.BufferGeometry().setFromPoints(cords as THREE.Vector3[]),
       new THREE.LineBasicMaterial({
         transparent: true,
@@ -804,12 +779,12 @@ function crtLines(data: DataLine) {
         side: THREE.DoubleSide,
       })
     );
+  }
 
   // dashArray: 2, // всегда должен быть
   // dashOffset: 0, // начать с dash к zero
   // dashRatio, // видимая минута ряда длины. Мин: 0.99, Макс: 0.5
   //line.materiall.uniforms.dashOffset.value -= 0.01;
-
   scene.add(lineMesh);
   parent.add(lineMesh);
 
@@ -818,43 +793,181 @@ function crtLines(data: DataLine) {
     lineMesh.addEventListener("click", (ev) => event(ev, lineMesh));
   }
 
-  if (false) {
-    const tlN = gsap.timeline({ repeat: Infinity });
+  if (animation) {
+    function update() {
+      lineMesh.material.uniforms.dashOffset.value -= 0.01;
+      requestAnimationFrame(update);
+    }
+    update()
+
+    // here i tried without dashOffset
+    /* feel pain, accept pain and know pain...
     // Loop through the positions array and add animation tweens to the timeline
-    allCords.forEach((ob: THREE.Vector3) => {
-      const p = arrToVec(mathArray([...ob], from, EmathOp.min, 3) as [number, number, number]);
-      tlN.to(lineMesh.position, { ...p, duration: 3, delay: 0, ease: 'power0' });
-      // const r = arrToVec([1, 1, 1]);
-      // tlN.to(lineMesh.rotation, { ...r, duration: 1, delay: 0, ease: 'power0' });
-    });
+    // const tlN = gsap.timeline({ repeat: Infinity, defaults: { duration: 12 } });
+    // const tlN2 = gsap.timeline({ repeat: Infinity });
+    // const p1 = arrToVec(mathArray(middle, from, EmathOp.min));
+    // const p2 = arrToVec(mathArray(to, from, EmathOp.min)); // X: -0.6418, Y: 0.8424, Z: -0.6858
+    // console.log(p1, p2);
+    // tlN.to(lineMesh.rotation, { x: -0.2788, y: -0.5242, z: -0.6758, delay: 0, ease: 'power0', duration: 11 })
+    // setInterval(() => tlN.restart(), 12);
+    // tlN2.to(lineMesh.position, { x: 0.073631, y: 0.099817, z: -0.109992, duration: 6, ease: 'power0' });
+    // tlN2.to(lineMesh.position, { ...p2, duration: 6, ease: 'power0' });
+    // setTimeout(function() {
+    //   tlN2.pause();
+    // }, 3000);
+    /* allCords.forEach((ob: THREE.Vector3, i: number) => {
+      console.log(i);
+        const p = arrToVec(mathArray([...ob], from, EmathOp.min, 3) as nmbrX3);
+        tlN2.to(lineMesh.position, { ...p, delay: 0, duration: 0.5, ease: 'power0' });
+        console.log(p);
+        // if (i == allCords -1) lineMesh.material.uniforms.dashOffset.value = 1;
+    }); */
+    // tlN.to(lineMesh.position, { x: 0.885, y: 0.323, z: -0.344, duration: 1, delay: 0, ease: 'power0' }, 24); */
   }
 
   return lineMesh;
 };
 
-const start = mathArray([...mapPoint.base.position.toArray()], [-.119, .1452, -.1388], EmathOp.min) as [number, number, number]; // -.05, .05, 0
+const mainPointTextImg = async () => {
+  const dataPoint: DataPoint = {
+    main: true, // color
+    position1: mathArray(mainPos, [0.0020, 0.1553, 0], EmathOp.add) as nmbrX3, // position of cylinderBody
+    position2: mainPos, // position of cylinderBase
+    geometry1: [0.004, 0.004, 0.3, 12], // geometry of cylinderBody
+    geometry2: [0.02, 24, 0, 10], // geometry of cylinderBase
+    /* event1: (event, mesh: CylinderBody) => {
+      cngMshpos(mesh);
+      console.log("body");
+    },
+    event2: (event, mesh: CylinderBase) => {
+      cngMshpos(mesh);
+      console.log("base");
+    }, */
+  };
+  const mapPoint = crtPoint(dataPoint);
 
-const dataLine: DataLine = {
-  from: start, // [-0.9204, 0.4447, -0.29] // X: -0.0519, Y: -0.0952, Z: 0.1388
-  to: [-0.135, 0.7684, -0.7336],
-  middle: [-0.8529, 0.971, -0.8264],
-  width: 0.002,
-  dashSize: 2, // max 10, 10 == full size
-  animation: true,
-  // [-0.9204, 0.4447, -0.29]
-  // X: -0.1414, Y: 0.7684, Z: -0.7336
-  event: (event, mesh: LineMesh) => {
-    cngMshpos(mesh);
-    console.log("line");
-  },
+  mainTl.fromTo(
+    mapPoint.base.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0.4 }
+  );
+  mainTl.fromTo(
+    mapPoint.body.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0.4 }
+  );
+
+
+  const dataText: DataText = {
+    text: "One",
+    pos: [-0.9266, 0.6378, -0.2552],
+    rot: [0, -1.85, 0],
+    size: 0.05,
+    parent,
+    event: (event, mesh: TextMesh) => {
+      cngMshpos(mesh);
+      console.log("text");
+    },
+  };
+  const dataText2: DataText = {
+    text: "Test",
+    pos: [-0.9266, 0.5278, -0.2552],
+    rot: [0, -1.85, 0],
+    size: 0.05,
+    color: 0x84b3df,
+    parent,
+  };
+
+  const text1 = (await crtText(dataText)) as TextMesh;
+  const text2 = (await crtText(dataText2)) as TextMesh;
+  // console.log(text1, text2);
+
+  mainTl.fromTo(
+    text1.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0.1, duration: 1 }, 5
+  );
+  mainTl.fromTo(
+    text2.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 1, z: 1, ease: "power1.out", duration: 1 }, 5.5
+  );
+
+  const imgMesh = crtImg(dataImg);
+  mainTl.fromTo(
+    imgMesh.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 0.7, y: 0.7, z: 1, ease: "power1.out", duration: 1 }, 6
+  );
 };
-const meshLine = crtLines(dataLine);
-// console.log(meshLine);
+mainPointTextImg();
 
-const res = mathArray(dataLine.from, dataLine.to, EmathOp.add)
+interface IallDataArr {
+  [key: string]: {
+    main: boolean;
+    cords: { from: nmbrX3, to: nmbrX3, middle: nmbrX3 };
+  }
+}
 
-// dataLine.from // from
-// dataLine.to // to
+const allDataArr: nmbrX3[] = [
+  [0.0329, 0.647, -0.8432], // London
+  [-0.5284, 0.6614, -0.6456], // Moscow
+  [-0.6562, 0.3793, 0.7484], // Tokio
+  [-1, 0.2292, -0.2822], // New-Delhi
+  [0.9618, 0.4299, -0.2006], // Washington
+  [-0.135, 0.7684, -0.7336], // Oslo
+];
+
+interface IallMshs {
+  point: {
+    body: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
+    base: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+  },
+  line: THREE.Mesh<any, any> | THREE.Line<any, any>
+}
+
+const allMshs: IallMshs[] = [];
+allDataArr.forEach((cord, i) => {
+  allMshs.push({
+    line: crtLines({
+      from: mainPos as nmbrX3,
+      to: cord, // X: -0.166, Y: 0.7008, Z: -0.67
+      // middle: [-0.6454, 0.8175, -0.7008],
+      width: 0.007,
+      dashOffset: -0.1,
+      dashArray: 2,
+      dashRatio: 0.85,
+      animation: true,
+    }),
+    point: crtPoint({
+      position1: mathArray(cord, [0.0020, 0.113, 0], EmathOp.add) as nmbrX3,
+      // [0.0020, 0.113, 0] is a difference between body and base positions
+      position2: cord,
+    })
+  });
+  mainTl.fromTo(
+    allMshs[i].point.base.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0 }, 2
+  );
+  mainTl.fromTo(
+    allMshs[i].point.body.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0 }, 3
+  );
+  mainTl.fromTo(
+    allMshs[i].line.scale,
+    { x: 0, y: 0, z: 0 },
+    { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0 }, 4.2
+  )
+});
+
+const timer = () => {
+  const timeHtml = document.querySelector('.time') as HTMLParagraphElement;
+  let tO = 0; // time old
+  setInterval(() => { timeHtml.innerText = tO >= 9 ? '' + ++tO : '0' + ++tO }, 1000)
+};
+timer();
 
 window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -869,8 +982,8 @@ function render() {
   // console.log(camera.position); // Vector3 {x: 1.311504434817275, y: 9.70059610982433, z: 6.370901916645389}
   // {x: x + 10.4, y: y + 4, z: z -3.5}
   lightGroup.position.copy(camera.position);
+  // console.log(meshLine.position)
   controls.update();
-  // meshLine.lookAt(new THREE.Vector3(0, 0, 0));
   interactionManager.update(); // to add event listener to mesh objects
   renderer.render(scene, camera);
 
