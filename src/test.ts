@@ -29,6 +29,7 @@ import { MeshLine, MeshLineGeometry, MeshLineMaterial } from '@lume/three-meshli
 // newest version of THREE.MeshLine by @lume: https://github.com/lume/three-meshline (thank you @lume for supporting this library)
 
 import { LoopSubdivision } from 'three-subdivide';
+import tweenModule, { Tween } from "three/examples/jsm/libs/tween.module.js";
 // for smooth edges in meshes, but i didn`t use it, so...
 
 const oldTimeLoad = new Date(); // to check how much time it took to load
@@ -115,6 +116,7 @@ const parent: Parent = new THREE.Mesh(
     opacity: 1,
     transparent: true,
     side: THREE.BackSide,
+    visible: false
   })
 );
 const meshHide = new THREE.Mesh(
@@ -175,11 +177,12 @@ interface DataPoint {
   geometry2?: nmbrX4;
   event1?: (event: any, mesh: CylinderBody) => void;
   event2?: (event: any, mesh: CylinderBase) => void;
+  event3?: (event: any, mesh: CylinderBase) => void;
 }
 
 // function that can create mesh cylinder-base and cylinder-body objects
 function crtPoint(data: DataPoint) {
-  const { main, position1, position2, geometry1, geometry2, event1, event2 } =
+  const { main, position1, position2, geometry1, geometry2, event1, event2, event3 } =
     data;
   const color = main ? 0x86c3f9 : 0x008dfb;
 
@@ -219,7 +222,34 @@ function crtPoint(data: DataPoint) {
     );
   }
 
-  return { body: cylinderBody, base: cylinderBase };
+  let clBsTrigger: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+  if (event3) {
+    clBsTrigger = new THREE.Mesh(
+      new THREE.CircleGeometry(...geometry2 || main ? [0.02, 24, 0, 10] : [0.015, 24, 0, 10]),
+      new THREE.MeshBasicMaterial({
+        visible: false,
+        side: THREE.BackSide,
+      })
+    );
+    clBsTrigger.position.set(...position2);
+    clBsTrigger.lookAt(new THREE.Vector3());
+    clBsTrigger.scale.set(5, 5, 5);
+    scene.add(clBsTrigger);
+    parent.add(clBsTrigger);
+
+    interactionManager.add(clBsTrigger);
+    clBsTrigger.addEventListener("mouseover", (event) =>
+      canvas.style.cursor = "pointer"
+    );
+    clBsTrigger.addEventListener("mouseout", (event) =>
+      canvas.style.cursor = "auto"
+    );
+    clBsTrigger.addEventListener("click", (event) =>
+      event3(event, clBsTrigger)
+    );
+  }
+
+  return { body: cylinderBody, base: cylinderBase, trigger: clBsTrigger };
 } // create point in the scene
 
 const inpRngs: NodeListOf<HTMLInputElement> = document.querySelectorAll(".rng"); // inputs with range
@@ -232,9 +262,15 @@ cordsVisBtn.addEventListener(
   }
 ); // to change the position after button click
 
+const copyEvHand = (d: string) => {
+  navigator.clipboard.writeText(d);
+  console.log(d);
+};
+const copyBtn = document.querySelector(".copyPos") as HTMLButtonElement;
+
 const cngMshpos = function (mesh: THREE.Mesh | THREE.Line) {
-  cordsInfo.innerText = `X: ${mesh.position.x}, Y: ${mesh.position.y}, Z: ${mesh.position.z}`;
-  console.log(...mesh.position);
+  cordsInfo.innerText = `x: ${mesh.position.x}, y: ${mesh.position.y}, z: ${mesh.position.z}`;
+  // console.log(...mesh.position);
   inpRngs.forEach((rng) => {
     const cls = rng.classList[0];
     const p = mesh.position[cls] as number;
@@ -242,12 +278,17 @@ const cngMshpos = function (mesh: THREE.Mesh | THREE.Line) {
     rng.addEventListener("input", (e: Event) => {
       (mesh.position as any)[rng.classList[0]] =
         +(e.target as HTMLInputElement).value * 0.02 - 1;
-      cordsInfo.innerText = `X: ${Math.floor(mesh.position.x * 10000) / 10000
-        }, Y: ${Math.floor(mesh.position.y * 10000) / 10000}, Z: ${Math.floor(mesh.position.z * 10000) / 10000
-        }`;
+      const cord: nmbrX3 = [Math.floor(mesh.position.x * 10000) / 10000
+        , Math.floor(mesh.position.y * 10000) / 10000, Math.floor(mesh.position.z * 10000) / 10000
+      ];
+      cordsInfo.innerText = `x: ${cord[0]}, y: ${cord[1]}, z: ${cord[2]}`;
+      console.log(cord.toString());
+      copyBtn.addEventListener("click", copyEvHand(cord));
+      // copyBtn.removeEventListener("click", copyEvHand(cord));
     });
   });
 }; // Ahhh, do not check this function, typescript, pls...
+// upd: i fixed types as much as i can
 
 const cngMshrot = function (mesh: THREE.Mesh | THREE.Line) {
   cordsInfo.innerText = `X: ${mesh.rotation.x}, Y: ${mesh.rotation.y}, Z: ${mesh.rotation.z}`;
@@ -265,8 +306,16 @@ const cngMshrot = function (mesh: THREE.Mesh | THREE.Line) {
     });
   });
 }; // TODO: function that can rotate the mesh, it`s not done yet! it consist of some mistakes
-
-const showMsg = async function (msg?: string, pos: { text: nmbrX3, cone: nmbrX3 }, size?: number) {
+interface IcrtMsg {
+  msg?: string,
+  szBx?: number,
+  szTxt?: number,
+  bvlThk?: number,
+  pos?: { txt: nmbrX3, cn: nmbrX3 },
+  gr: { pos: nmbrX3, rot: nmbrX3 }
+}
+const crtMsg = async function (data: IcrtMsg) {
+  const { msg, szBx, szTxt, bvlThk, pos, gr } = data;
   const iterations = 2;
   const params = {
     split: true,       // optional, default: true
@@ -275,43 +324,41 @@ const showMsg = async function (msg?: string, pos: { text: nmbrX3, cone: nmbrX3 
     flatOnly: false,      // optional, default: false
     maxTriangles: Infinity,   // optional, default: Infinity
   };
-  const geo = LoopSubdivision.modify(new THREE.BoxGeometry(0.15, 0.6, size || 1, 6), iterations, params);
+  const geo = LoopSubdivision.modify(new THREE.BoxGeometry(0.0345, 0.15, szBx || 0.3, 6), iterations, params);
   geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, new THREE.MeshNormalMaterial({ side: THREE.FrontSide }));
   // mesh.geometry.computeVertexNormals();
-  mesh.position.set(-0.6, 1, -0.7);
-  mesh.scale.set(0.4, 0.4, 0.4);
 
   const dataText2: DataText = {
-    text: msg || "Test",
-    pos: [-0.9266, 0.5278, -0.2552],
+    text: msg || "Wow!",
+    pos: pos ? pos.txt : [-0.0146, -0.0319, -0.127],
     rot: [0, -1.85, 0],
-    size: 0.3,
+    size: szTxt || 0.075,
     // bvlThk: 0.15,
-    bvlThk: 0.01,
+    bvlThk: bvlThk || 0.005,
+    bevelSize: 0.0004,
     color: 0x84b3df,
     parent,
     event(event, mesh) {
-      cngMshpos(mesh);
+      // cngMshpos(mesh);
     },
   };
 
   const text2 = (await crtText(dataText2)) as TextMesh;
   // console.log(...mesh.position);
   // console.log(...mathArray([...mesh.position], [-0.0418, 0.0576, -0.166], EmathOp.min, 3));
-  text2.position.set(...mathArray([...mesh.position], [-0.0418, -0.0576, -0.166], EmathOp.add, 3)); // if bvlThk is 0.01,
   // text2.position.set(...mathArray([...mesh.position], [-0.0018, -0.0576, -0.166], EmathOp.add)); // if bvlThk is 0.15,
   text2.rotation.copy(mesh.rotation);
-  text2.rotateY(-1.55);
-  text2.scale.copy(mesh.scale);
+  text2.rotateY(-1.57);
 
   const cone = new THREE.Mesh(
-    new THREE.ConeGeometry(0.036, 0.10, 4, 1),
+    new THREE.ConeGeometry(0.023, 0.07, 4, 1),
     new THREE.MeshNormalMaterial()
   );
-  cone.position.set(-0.6, 0.8592, -0.8684);
+  cone.position.set(...(pos ? pos.cn : [0, -0.0896, -0.102] as nmbrX3));
   cone.rotation.set(3.6, 0.77, 6.3);
-  cngMshpos(cone);
+
+  // cngMshpos(cone);
 
   const group = new THREE.Group();
   group.add(mesh, text2, cone);
@@ -323,8 +370,13 @@ const showMsg = async function (msg?: string, pos: { text: nmbrX3, cone: nmbrX3 
   // group.visible = false;
   scene.add(group);
   parent.add(group);
+  group.position.set(...gr.pos);
+  group.rotation.set(...gr.rot);
+
   // interactionManager.add(group);
   // group.addEventListener("click", (ev) => cngMshpos(group));
+
+  return group;
 };
 
 const mainTl = gsap.timeline({ defaults: { duration: 2 } }); // duration 2
@@ -343,6 +395,7 @@ function crtText(data: DataText) {
     rot,
     size,
     bvlThk,
+    bevelSize,
     color = 0xffffff,
     height = 0.004,
     curve = 2,
@@ -359,7 +412,7 @@ function crtText(data: DataText) {
           curveSegments: curve,
           bevelEnabled: bvlThk ? true : false,
           bevelThickness: bvlThk,
-          bevelSize: 0.01,
+          bevelSize: bevelSize || 0.01,
         }),
         new THREE.MeshBasicMaterial({
           color: color,
@@ -385,6 +438,7 @@ interface DataText {
   rot: nmbrX3;
   size: number;
   bvlThk?: number;
+  bevelSize?: number;
   parent?: Parent;
   color?: string | number;
   font?: string;
@@ -440,7 +494,7 @@ const dataImg: DataImg = {
   rot: [0, -1.85, 0],
   parent,
   event: (event, mesh) => {
-    cngMshpos(mesh);
+    // cngMshpos(mesh);
     console.log("img");
   },
 };
@@ -936,7 +990,7 @@ const mainPointTextImg = async () => {
     size: 0.05,
     parent,
     event: (event, mesh: TextMesh) => {
-      cngMshpos(mesh);
+      // cngMshpos(mesh);
       console.log("text");
     },
   };
@@ -973,20 +1027,13 @@ const mainPointTextImg = async () => {
 };
 mainPointTextImg();
 
-interface IallDataArr {
-  [key: string]: {
-    main: boolean;
-    cords: { from: nmbrX3, to: nmbrX3, middle: nmbrX3 };
-  }
-}
-
-const allDataArr: nmbrX3[] = [
-  [-1, 0.2292, -0.2822], // New-Delhi
-  [-0.5284, 0.6614, -0.6456], // Moscow
-  [-0.6562, 0.3793, 0.7484], // Tokio
-  [0.0329, 0.647, -0.8432], // London
-  [0.9618, 0.4299, -0.2006], // Washington
-  [-0.135, 0.7684, -0.7336], // Oslo
+const allDataArr: [nmbrX3, nmbrX3, nmbrX3][] = [
+  [[-1, 0.2292, -0.2822], [-1.027, 0.3412, -0.1766], [0, -0.18, 0]], // New-Delhi
+  [[-0.5284, 0.6614, -0.6456], [-0.6072, 0.7838, -0.5634], [0, -0.75, 0]], // Moscow
+  [[-0.6562, 0.3793, 0.7484], [-0.5734, 0.496, 0.8274], [0, 0.85, 0]], // Tokio
+  [[0.0329, 0.647, -0.8432], [-0.0774, 0.762, -0.8274], [0, -1.4, 0]], // London
+  [[0.9618, 0.4299, -0.2006], [0.9469, 0.5541, -0.3184], [0, -3, 0]], // Washington
+  [[-0.135, 0.7684, -0.7336], [-0.244, 0.885, -0.6904], [0, -1.2, 0]], // Oslo
 ];
 
 interface IallMshs {
@@ -994,52 +1041,89 @@ interface IallMshs {
     body: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>;
     base: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
   },
-  line: THREE.Mesh<any, any> | THREE.Line<any, any>
+  line: THREE.Mesh<any, any> | THREE.Line<any, any>,
+  msg: THREE.Group
 }
 
 const allMshs: IallMshs[] = [];
-allDataArr.forEach((cord, i) => {
-  allMshs.push({
-    line: crtLines({
-      from: mainPos as nmbrX3,
-      to: cord, // X: -0.166, Y: 0.7008, Z: -0.67
-      // middle: [-0.6454, 0.8175, -0.7008],
-      width: 0.007,
-      dashOffset: -0.1,
-      dashArray: 2,
-      dashRatio: 0.85,
-      animation: true,
-    }),
-    point: crtPoint({
-      position1: mathArray(cord, [0.0020, 0.113, 0], EmathOp.add) as nmbrX3,
-      // [0.0020, 0.113, 0] is a difference between body and base positions
-      position2: cord,
-      /* event1(event, mesh) {
-        cngMshpos(mesh)
-      }, */
-      event2(event, mesh) {
-        cngMshpos(mesh)
-      },
-    })
+let mainMsgNum: number | null = null;
+const hideMshs = function (mshs: THREE.Group[] | THREE.Mesh[], time: number) {
+  mshs.forEach(h => {
+    new tweenModule.Tween(h.scale)
+      .to({ x: 0, y: 0, z: 0 }, time)
+      .easing(tweenModule.Easing.Quadratic.InOut)
+      .start();
+  })
+};
+const showMshs = function (mshs: THREE.Group[] | THREE.Mesh[], time: number) {
+  mshs.forEach(s => {
+    new tweenModule.Tween(s.scale)
+      .to({ x: 1, y: 1, z: 1 }, time)
+      .easing(tweenModule.Easing.Quadratic.InOut)
+      .start();
+  })
+};
+allDataArr.forEach(async (cord, i) => {
+  const msg = await crtMsg({ gr: { pos: cord[1], rot: cord[2] } });
+  const line = crtLines({
+    from: mainPos as nmbrX3,
+    to: cord[0], // X: -0.166, Y: 0.7008, Z: -0.67
+    // middle: [-0.6454, 0.8175, -0.7008],
+    width: 0.007,
+    dashOffset: -0.1,
+    dashArray: 2,
+    dashRatio: 0.85,
+    animation: true,
   });
+  const point = crtPoint({
+    position1: mathArray(cord[0], [0.0020, 0.113, 0], EmathOp.add) as nmbrX3,
+    // [0.0020, 0.113, 0] is a difference between body and base positions
+    position2: cord[0],
+    /* event1(event, mesh) {
+      cngMshpos(mesh)
+    }, */
+    /* event2(event, mesh) {
+      // cngMshpos(mesh)
+      // console.log('hello');
+      // showMsg(msg);
+    }, */
+    event3() {
+      if (mainMsgNum || mainMsgNum !== null) {
+        showMshs([allMshs[mainMsgNum].point.body], 1000);
+        hideMshs([allMshs[mainMsgNum].msg], 1000)
+      }; // to hide old msg and show old point body when user clicks on another msg
+      hideMshs([point.body], 1000);
+      showMshs([msg], 1000);
+      mainMsgNum = i; // main msg number
+    }
+  });
+  allMshs.push({ line, point, msg });
   mainTl.fromTo(
-    allMshs[i].point.base.scale,
+    point.base.scale,
     { x: 0, y: 0, z: 0 },
     { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0 }, 2
   );
   mainTl.fromTo(
-    allMshs[i].point.body.scale,
+    point.body.scale,
     { x: 0, y: 0, z: 0 },
     { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0 }, 3
   );
   mainTl.fromTo(
-    allMshs[i].line.scale,
+    line.scale,
     { x: 0, y: 0, z: 0 },
     { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0 }, 4.2
-  )
+  );
+  msg.scale.set(0, 0, 0);
 });
 
-showMsg('Amazing!', mainPos, 2);
+// const msgSh2Def = await crtMsg({ msg: 'Wow!', szBx: 0.3, szTxt: 0.075, bvlThk: 0.005, pos: { txt: [-0.0146, -0.0319, -0.127], cn: [0, -0.0896, -0.102] }, gr: { pos: [-0.9366, 0.5774, -0.2363], rot: [0, -0.3, 0] } }); // 
+// const msgSh = await crtMsg({ gr: { pos: [-0.9366, 0.5774, -0.2363], rot: [0, -0.3, 0] } }); // main 
+// const msgSh2 = await crtMsg({ gr: { pos: [-0.6072, 0.7838, -0.5634], rot: [0, -0.75, 0] } }); // moscow ++ 
+// const msgSh3 = await crtMsg({ gr: { pos: [-0.244, 0.885, -0.6904], rot: [0, -1.2, 0] } }); // oslo ++
+// const msgSh4 = await crtMsg({ gr: { pos: [-0.0774, 0.762, -0.8274], rot: [0, -1.4, 0] } }); // london ++
+// const msgSh5 = await crtMsg({ gr: { pos: [-1.027, 0.3412, -0.1766], rot: [0, -0.18, 0] } }); // new delhi ++
+// const msgSh6 = await crtMsg({ gr: { pos: [-0.5734, 0.496, 0.8274], rot: [0, 0.85, 0] } }); // tokio ++
+// const msgSh7 = await crtMsg({ gr: { pos: [0.9469, 0.5541, -0.3184], rot: [0, -3, 0] } }); // washington ++
 
 const timer = () => {
   const timeHtml = document.querySelector('.time') as HTMLParagraphElement;
@@ -1063,6 +1147,7 @@ function render() {
   lightGroup.position.copy(camera.position);
   // console.log(meshLine.position)
   controls.update();
+  tweenModule.update();
   interactionManager.update(); // to add event listener to mesh objects
   renderer.render(scene, camera);
 

@@ -53,16 +53,27 @@ body {
         display: none;
     }
 
+    .copyPos {
+        display: block;
+    }
+
     .rng {
         transform: translateY(0);
     }
 }
 
-.changePos {
+.changePos,
+.copyPos {
     // width: 120px;
     width: fit-content;
     margin: 0 auto;
     padding: 5px 10px;
     color: #bcbbbb;
     background: #000;
+}
+
+.copyPos {
+    display: none;
+    position: absolute;
+    right: 0;
 }

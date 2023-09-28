@@ -28,6 +28,11 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js"; */
 import { MeshLine, MeshLineGeometry, MeshLineMaterial } from '@lume/three-meshline';
 // newest version of THREE.MeshLine by @lume: https://github.com/lume/three-meshline (thank you @lume for supporting this library)
 
+import { LoopSubdivision } from 'three-subdivide';
+// for smooth edges in meshes, but i didn`t use it, so...
+
+const oldTimeLoad = new Date(); // to check how much time it took to load
+
 // how to get cords of planeGeometries (dots) for sphere from any image:
 // you need two things: the image (that we will use for filling with dots) and the function that can do this magic
 // the amount of dots` cords depends on the size of the image and function,
@@ -261,6 +266,67 @@ const cngMshrot = function (mesh: THREE.Mesh | THREE.Line) {
   });
 }; // TODO: function that can rotate the mesh, it`s not done yet! it consist of some mistakes
 
+const showMsg = async function (msg?: string, pos: { text: nmbrX3, cone: nmbrX3 }, size?: number) {
+  const iterations = 2;
+  const params = {
+    split: true,       // optional, default: true
+    uvSmooth: true,      // optional, default: false
+    preserveEdges: true,      // optional, default: false
+    flatOnly: false,      // optional, default: false
+    maxTriangles: Infinity,   // optional, default: Infinity
+  };
+  const geo = LoopSubdivision.modify(new THREE.BoxGeometry(0.15, 0.6, size || 1, 6), iterations, params);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshNormalMaterial({ side: THREE.FrontSide }));
+  // mesh.geometry.computeVertexNormals();
+  mesh.position.set(-0.6, 1, -0.7);
+  mesh.scale.set(0.4, 0.4, 0.4);
+
+  const dataText2: DataText = {
+    text: msg || "Test",
+    pos: [-0.9266, 0.5278, -0.2552],
+    rot: [0, -1.85, 0],
+    size: 0.3,
+    // bvlThk: 0.15,
+    bvlThk: 0.01,
+    color: 0x84b3df,
+    parent,
+    event(event, mesh) {
+      cngMshpos(mesh);
+    },
+  };
+
+  const text2 = (await crtText(dataText2)) as TextMesh;
+  // console.log(...mesh.position);
+  // console.log(...mathArray([...mesh.position], [-0.0418, 0.0576, -0.166], EmathOp.min, 3));
+  text2.position.set(...mathArray([...mesh.position], [-0.0418, -0.0576, -0.166], EmathOp.add, 3)); // if bvlThk is 0.01,
+  // text2.position.set(...mathArray([...mesh.position], [-0.0018, -0.0576, -0.166], EmathOp.add)); // if bvlThk is 0.15,
+  text2.rotation.copy(mesh.rotation);
+  text2.rotateY(-1.55);
+  text2.scale.copy(mesh.scale);
+
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.036, 0.10, 4, 1),
+    new THREE.MeshNormalMaterial()
+  );
+  cone.position.set(-0.6, 0.8592, -0.8684);
+  cone.rotation.set(3.6, 0.77, 6.3);
+  cngMshpos(cone);
+
+  const group = new THREE.Group();
+  group.add(mesh, text2, cone);
+  // group.scale.set(0.5, 0.5, 0.5)
+  // group.position.set(...pos);
+  // group.position.set(-0.5284, 0.6614, -0.6456)
+
+  // cngMshpos(group);
+  // group.visible = false;
+  scene.add(group);
+  parent.add(group);
+  // interactionManager.add(group);
+  // group.addEventListener("click", (ev) => cngMshpos(group));
+};
+
 const mainTl = gsap.timeline({ defaults: { duration: 2 } }); // duration 2
 const mainPos: nmbrX3 = [-0.9012, 0.4558, -0.3452]; // Uzbekistan (main position)
 // console.log(...mainPos);
@@ -276,6 +342,7 @@ function crtText(data: DataText) {
     pos,
     rot,
     size,
+    bvlThk,
     color = 0xffffff,
     height = 0.004,
     curve = 2,
@@ -290,6 +357,9 @@ function crtText(data: DataText) {
           size: size,
           height: height,
           curveSegments: curve,
+          bevelEnabled: bvlThk ? true : false,
+          bevelThickness: bvlThk,
+          bevelSize: 0.01,
         }),
         new THREE.MeshBasicMaterial({
           color: color,
@@ -314,6 +384,7 @@ interface DataText {
   pos: nmbrX3;
   rot: nmbrX3;
   size: number;
+  bvlThk?: number;
   parent?: Parent;
   color?: string | number;
   font?: string;
@@ -910,10 +981,10 @@ interface IallDataArr {
 }
 
 const allDataArr: nmbrX3[] = [
-  [0.0329, 0.647, -0.8432], // London
+  [-1, 0.2292, -0.2822], // New-Delhi
   [-0.5284, 0.6614, -0.6456], // Moscow
   [-0.6562, 0.3793, 0.7484], // Tokio
-  [-1, 0.2292, -0.2822], // New-Delhi
+  [0.0329, 0.647, -0.8432], // London
   [0.9618, 0.4299, -0.2006], // Washington
   [-0.135, 0.7684, -0.7336], // Oslo
 ];
@@ -943,6 +1014,12 @@ allDataArr.forEach((cord, i) => {
       position1: mathArray(cord, [0.0020, 0.113, 0], EmathOp.add) as nmbrX3,
       // [0.0020, 0.113, 0] is a difference between body and base positions
       position2: cord,
+      /* event1(event, mesh) {
+        cngMshpos(mesh)
+      }, */
+      event2(event, mesh) {
+        cngMshpos(mesh)
+      },
     })
   });
   mainTl.fromTo(
@@ -961,6 +1038,8 @@ allDataArr.forEach((cord, i) => {
     { x: 1, y: 1, z: 1, ease: "power1.out", delay: 0 }, 4.2
   )
 });
+
+showMsg('Amazing!', mainPos, 2);
 
 const timer = () => {
   const timeHtml = document.querySelector('.time') as HTMLParagraphElement;
@@ -991,3 +1070,5 @@ function render() {
 }
 
 render();
+
+console.log(new Date() - oldTimeLoad + 'мс'); // to check how much time it took to load
