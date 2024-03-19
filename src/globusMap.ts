@@ -112,14 +112,15 @@ type Parent = THREE.Mesh<THREE.IcosahedronGeometry, THREE.MeshBasicMaterial>;
 const parent: Parent = new THREE.Mesh(
   new THREE.IcosahedronGeometry(1, 2),
   new THREE.MeshBasicMaterial({
-    opacity: 1,
-    transparent: true,
+    // opacity: 1,
+    // transparent: true,
     side: THREE.BackSide,
+    color: new THREE.Color(0x044948)
   })
 );
 const meshHide = new THREE.Mesh(
   new THREE.SphereGeometry(1.0499, 64, 36),
-  new THREE.MeshStandardMaterial({ color: new THREE.Color(0x091e5a) })
+  new THREE.MeshStandardMaterial({ color: new THREE.Color(0x044948) })
   // new THREE.MeshStandardMaterial({ map: imgTexture }) // yeah, using pictures instead of dots is not ideal...
 );
 

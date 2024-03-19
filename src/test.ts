@@ -1092,9 +1092,16 @@ allDataArr.forEach(async (cord, i) => {
         showMshs([allMshs[mainMsgNum].point.body], 1000);
         hideMshs([allMshs[mainMsgNum].msg], 1000)
       }; // to hide old msg and show old point body when user clicks on another msg
+
       hideMshs([point.body], 1000);
       showMshs([msg], 1000);
-      mainMsgNum = i; // main msg number
+
+      if (mainMsgNum == i) {
+        showMshs([allMshs[mainMsgNum].point.body], 1000);
+        hideMshs([allMshs[mainMsgNum].msg], 1000)
+      } // if user clicks on same msg then the msg will be hidden
+
+      mainMsgNum = i; // to change main msg number
     }
   });
   allMshs.push({ line, point, msg });
